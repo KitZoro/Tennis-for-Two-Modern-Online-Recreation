@@ -163,21 +163,21 @@ class CpuController:
             # Every level predicts the ball, chooses power, and aims strategically.
             # The differences are reaction speed, placement accuracy, and timing.
             "easy": {
-                "reaction": 24,
+                "reaction": 12,
                 "position_error": 38.0,
                 "move_skip": 0.14,
                 "miss": 0.08,
                 "hit_margin": 0.95,
             },
             "medium": {
-                "reaction": 8,
+                "reaction": 4,
                 "position_error": 12.0,
                 "move_skip": 0.025,
                 "miss": 0.015,
                 "hit_margin": 1.08,
             },
             "hard": {
-                "reaction": 2,
+                "reaction": 1,
                 "position_error": 0.0,
                 "move_skip": 0.0,
                 "miss": 0.0,

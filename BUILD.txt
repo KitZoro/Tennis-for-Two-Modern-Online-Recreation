@@ -1,1 +1,7 @@
-Tennis for Two v27.2 — Synchronized Start + Better Disconnect Diagnostics
+Tennis for Two v30 FULL
+120 FPS + 60-frame online buffer
+Rollback prediction fix + batched rollback
+Deterministic one-PC CPU
+Socket-free in-memory one-PC network simulator
+Real online TLS/Tailscale uses partial-write-safe batched transport
+Protocol 29

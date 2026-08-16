@@ -9,7 +9,7 @@ from config import AUDIO_SAMPLE_RATE, WIDTH, HEIGHT
 
 
 def main() -> None:
-    print("Starting Tennis for Two v30 FULL + Story Pack")
+    print("Starting Tennis for Two v27.3 Story Preview")
     pygame.mixer.pre_init(AUDIO_SAMPLE_RATE, -16, 1, 512)
     pygame.init()
     ui.SOUND = SoundManager()
@@ -19,7 +19,7 @@ def main() -> None:
     except pygame.error:
         pass
 
-    pygame.display.set_caption("Tennis for Two — v30 FULL + Story Pack")
+    pygame.display.set_caption("Tennis for Two — v27.3 Story Preview")
     ui._open_display(False)
 
     screen = pygame.Surface((WIDTH, HEIGHT)).convert()

@@ -9,7 +9,6 @@ import pygame
 from audio import SoundManager
 from config import *
 from cpu import CpuController
-from test_cpu import DeterministicTestCpu
 from game import (
     InputState, PlayerState, RenderState, initial_world, step_world,
 )
@@ -433,7 +432,7 @@ def network_test_menu(screen, fonts) -> Optional[NetworkTestPreset]:
         draw_text(
             screen,
             small,
-            "P1 = YOU • P2 = REMOTE CPU • IN-MEMORY LINK + ARTIFICIAL INTERNET DELAY",
+            "P1 = YOU • P2 = REMOTE CPU • REAL LOCAL TLS + ARTIFICIAL INTERNET DELAY",
             (WIDTH // 2, 91),
             MUTED,
             center=True,
@@ -466,7 +465,7 @@ def network_test_menu(screen, fonts) -> Optional[NetworkTestPreset]:
 
 
 def _wait_for_loopback_test_pair(screen, fonts, preset: NetworkTestPreset):
-    """Create the in-memory test pair while keeping the Pygame window responsive."""
+    """Create the localhost TLS pair while keeping the Pygame window responsive."""
     _, medium, small = fonts
     job = LoopbackPairJob()
     job.start()
@@ -486,10 +485,10 @@ def _wait_for_loopback_test_pair(screen, fonts, preset: NetworkTestPreset):
 
         screen.fill(BG)
         draw_grid(screen)
-        draw_text(screen, medium, "BUILDING v30 NETWORK SIMULATOR", (WIDTH // 2, 235), GREEN, center=True)
+        draw_text(screen, medium, "BUILDING LOCAL NETWORK TEST", (WIDTH // 2, 235), GREEN, center=True)
         draw_text(screen, small, preset.label, (WIDTH // 2, 282), WHITE, center=True)
         draw_text(screen, small, job.stage, (WIDTH // 2, 320), MUTED, center=True)
-        draw_text(screen, small, "Creating two in-memory endpoints on this PC...", (WIDTH // 2, 362), MUTED, center=True)
+        draw_text(screen, small, "Creating two TLS endpoints on this PC...", (WIDTH // 2, 362), MUTED, center=True)
         present(screen)
 
     if job.error or job.host_peer is None or job.guest_peer is None:
@@ -522,7 +521,7 @@ def run_network_test(screen, fonts, preset: NetworkTestPreset) -> None:
     guest_peer = DelayedPeer(raw_guest, preset, seed=27102)
     host_session = RollbackSession(1, host_peer, is_host=True)
     guest_session = RollbackSession(2, guest_peer, is_host=False)
-    remote_cpu = DeterministicTestCpu()
+    remote_cpu = CpuController("medium")
     render_state = RenderState.from_world(host_session.state)
 
     clock = pygame.time.Clock()
@@ -544,7 +543,7 @@ def run_network_test(screen, fonts, preset: NetworkTestPreset) -> None:
                     elif event.key == pygame.K_r and host_session.state.winner:
                         # Host sends the real restart packet to the simulated remote.
                         host_session.request_restart()
-                        remote_cpu = DeterministicTestCpu()
+                        remote_cpu = CpuController("medium")
                         render_state = RenderState.from_world(host_session.state)
 
             accumulator += dt
@@ -554,7 +553,7 @@ def run_network_test(screen, fonts, preset: NetworkTestPreset) -> None:
                 p2 = remote_cpu.update(guest_session.state)
 
                 # These are two independent rollback sessions connected through
-                # the v30 in-memory test link. Only transport timing is artificial.
+                # actual localhost TLS. Only the transport timing is artificial.
                 host_session.advance(p1)
                 guest_session.advance(p2)
 

@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import queue
 import random
-import socket
 import threading
 import time
 from dataclasses import dataclass
 from typing import Optional
 
-from network import ConnectJob, SecurePeer
+from config import NETWORK_DEAD_TIMEOUT, NETWORK_STALL_WARNING
 
 
 @dataclass(frozen=True)
@@ -30,7 +29,9 @@ class NetworkTestPreset:
         if self.jitter_ms:
             parts.append(f"±{int(self.jitter_ms)} ms jitter/leg")
         if self.stall_chance:
-            parts.append(f"{int(self.stall_chance * 100)}% +{int(self.stall_ms)} ms stalls")
+            parts.append(
+                f"{int(self.stall_chance * 100)}% +{int(self.stall_ms)} ms stalls"
+            )
         return " • ".join(parts)
 
 
@@ -44,23 +45,122 @@ NETWORK_TEST_PRESETS = (
 )
 
 
-class DelayedPeer:
-    """Latency/jitter shim around the real TLS SecurePeer.
+class InMemoryPeer:
+    """Socket-free peer used ONLY by the one-PC network simulator.
 
-    Payloads still travel through SecurePeer, TLS 1.3, framing, reader/writer
-    threads and rollback. This wrapper only delays when an outbound payload is
-    handed to the real transport. Delay is kept in-order to resemble TCP.
+    It implements the same small interface RollbackSession expects, but moves
+    dictionaries between two in-process inboxes instead of opening TCP/TLS.
+    Real online play still uses network.py and TLS 1.3.
     """
 
-    def __init__(self, peer: SecurePeer, preset: NetworkTestPreset, seed: int):
+    def __init__(self, name: str):
+        self.name = name
+        self.other: Optional["InMemoryPeer"] = None
+        self.inbox: "queue.Queue[dict]" = queue.Queue()
+        self.alive = True
+        self.error_reason = ""
+        self.last_received = time.monotonic()
+
+        self.packets_in = 0
+        self.packets_out = 0
+        self.max_outgoing_queue = 0
+        self.last_send_stall_ms = 0.0
+        self.remote_address = "in-memory"
+
+        self._lock = threading.Lock()
+
+    def connect(self, other: "InMemoryPeer") -> None:
+        self.other = other
+
+    @property
+    def seconds_since_packet(self) -> float:
+        return max(0.0, time.monotonic() - self.last_received)
+
+    @property
+    def stalled(self) -> bool:
+        return (
+            self.alive
+            and self.seconds_since_packet >= NETWORK_STALL_WARNING
+        )
+
+    @property
+    def outgoing_queue_depth(self) -> int:
+        return 0
+
+    def send(self, payload: dict) -> bool:
+        if not self.alive or not isinstance(payload, dict):
+            return False
+
+        other = self.other
+        if other is None or not other.alive:
+            self.fail("In-memory test peer is not available")
+            return False
+
+        # Top-level copy matches SecurePeer.send() behavior.
+        copied = dict(payload)
+        other.inbox.put(copied)
+        other.packets_in += 1
+        other.last_received = time.monotonic()
+        self.packets_out += 1
+        return True
+
+    def poll_all(self) -> list[dict]:
+        out: list[dict] = []
+        while True:
+            try:
+                out.append(self.inbox.get_nowait())
+            except queue.Empty:
+                return out
+
+    def fail(self, reason: str) -> None:
+        with self._lock:
+            if reason and not self.error_reason:
+                self.error_reason = str(reason)
+            self.alive = False
+
+        # Mirror a real dead connection to the other endpoint so the test does
+        # not leave one zombie session running forever.
+        if self.other is not None and self.other.alive:
+            self.other.error_reason = self.other.error_reason or (
+                "Other in-memory test peer closed"
+            )
+            self.other.alive = False
+
+    def close(self) -> None:
+        with self._lock:
+            was_alive = self.alive
+            self.alive = False
+
+        if was_alive and self.other is not None and self.other.alive:
+            self.other.error_reason = self.other.error_reason or (
+                "Other in-memory test peer closed"
+            )
+            self.other.alive = False
+
+
+class DelayedPeer:
+    """Latency/jitter/stall shim for the socket-free one-PC simulator.
+
+    This is deliberately separate from the real online transport. It preserves
+    packet order like TCP while allowing controlled delay, jitter and stalls.
+    """
+
+    def __init__(self, peer: InMemoryPeer, preset: NetworkTestPreset, seed: int):
         self.peer = peer
         self.preset = preset
         self.random = random.Random(seed)
-        self.pending: "queue.Queue[tuple[float, dict]]" = queue.Queue(maxsize=4096)
+
+        self.pending: "queue.Queue[tuple[float, dict]]" = queue.Queue(maxsize=16384)
         self._alive = True
         self._last_due = 0.0
         self._max_pending = 0
-        self._thread = threading.Thread(target=self._pump, daemon=True, name="tft-net-test-delay")
+        self._last_activity = time.monotonic()
+
+        self._thread = threading.Thread(
+            target=self._pump,
+            daemon=True,
+            name=f"tft-v30-delay-{seed}",
+        )
         self._thread.start()
 
     @property
@@ -95,7 +195,7 @@ class DelayedPeer:
 
     @property
     def remote_address(self) -> str:
-        return self.peer.remote_address
+        return "simulated-link"
 
     @property
     def packets_in(self) -> int:
@@ -107,58 +207,98 @@ class DelayedPeer:
 
     @property
     def outgoing_queue_depth(self) -> int:
-        return self.pending.qsize() + self.peer.outgoing_queue_depth
+        return self.pending.qsize()
 
     @property
     def max_outgoing_queue(self) -> int:
-        return max(self._max_pending, self.peer.max_outgoing_queue)
+        return max(self._max_pending, self.pending.qsize())
 
     @property
     def last_send_stall_ms(self) -> float:
-        return self.peer.last_send_stall_ms
+        return 0.0
 
     def _schedule_time(self) -> float:
         now = time.monotonic()
         delay_ms = self.preset.one_way_ms
+
         if self.preset.jitter_ms:
-            delay_ms += self.random.uniform(-self.preset.jitter_ms, self.preset.jitter_ms)
-        if self.preset.stall_chance and self.random.random() < self.preset.stall_chance:
+            delay_ms += self.random.uniform(
+                -self.preset.jitter_ms,
+                self.preset.jitter_ms,
+            )
+
+        if (
+            self.preset.stall_chance
+            and self.random.random() < self.preset.stall_chance
+        ):
             delay_ms += self.preset.stall_ms
 
         due = now + max(0.0, delay_ms) / 1000.0
-        # TCP is ordered. A later payload cannot overtake an earlier payload.
-        due = max(due, self._last_due + 0.00001)
+
+        # Ordered transport: later packets do not overtake earlier packets.
+        due = max(due, self._last_due + 0.000001)
         self._last_due = due
         return due
 
     def send(self, payload: dict) -> bool:
         if not self.alive or not isinstance(payload, dict):
             return False
+
         try:
-            self.pending.put_nowait((self._schedule_time(), dict(payload)))
-            self._max_pending = max(self._max_pending, self.pending.qsize())
+            self.pending.put_nowait(
+                (self._schedule_time(), dict(payload))
+            )
+            self._max_pending = max(
+                self._max_pending,
+                self.pending.qsize(),
+            )
             return True
         except queue.Full:
-            self.fail("Network test delay queue overflow")
+            self.fail("v30 simulated network queue overflow")
             return False
 
     def _pump(self) -> None:
-        while self._alive and self.peer.alive:
-            try:
-                due, payload = self.pending.get(timeout=0.20)
-            except queue.Empty:
-                continue
+        held: Optional[tuple[float, dict]] = None
 
-            while self._alive and self.peer.alive:
-                remaining = due - time.monotonic()
-                if remaining <= 0:
-                    break
-                time.sleep(min(remaining, 0.01))
+        while self._alive and self.peer.alive:
+            if held is None:
+                try:
+                    held = self.pending.get(timeout=0.20)
+                except queue.Empty:
+                    continue
+
+            due, payload = held
+            remaining = due - time.monotonic()
+
+            if remaining > 0:
+                time.sleep(min(remaining, 0.002))
+                continue
 
             if self._alive and self.peer.alive:
                 if not self.peer.send(payload):
                     self._alive = False
+
             self.pending.task_done()
+            held = None
+
+            # Drain a burst of packets that became due together.
+            for _ in range(63):
+                if not self._alive or not self.peer.alive:
+                    break
+
+                try:
+                    due2, payload2 = self.pending.get_nowait()
+                except queue.Empty:
+                    break
+
+                now = time.monotonic()
+                if due2 > now:
+                    held = (due2, payload2)
+                    break
+
+                if not self.peer.send(payload2):
+                    self._alive = False
+                self.pending.task_done()
 
     def poll_all(self) -> list[dict]:
         return self.peer.poll_all()
@@ -169,100 +309,38 @@ class DelayedPeer:
 
 
 class LoopbackPairJob:
-    """Create a real TLS host+guest pair on 127.0.0.1 in the background."""
+    """v30 compatibility wrapper: build two in-memory peers, no sockets or TLS."""
 
     def __init__(self):
         self.done = threading.Event()
         self.error = ""
-        self.host_peer: Optional[SecurePeer] = None
-        self.guest_peer: Optional[SecurePeer] = None
+        self.host_peer: Optional[InMemoryPeer] = None
+        self.guest_peer: Optional[InMemoryPeer] = None
         self.port = 0
-        self.stage = "STARTING"
+        self.stage = "STARTING IN-MEMORY LINK"
         self.cancel = threading.Event()
-        self._thread = threading.Thread(target=self._worker, daemon=True, name="tft-loopback-setup")
 
     def start(self) -> None:
-        self._thread.start()
+        if self.cancel.is_set():
+            self.stage = "CANCELLED"
+            self.done.set()
+            return
+
+        host = InMemoryPeer("host")
+        guest = InMemoryPeer("guest")
+        host.connect(guest)
+        guest.connect(host)
+
+        self.host_peer = host
+        self.guest_peer = guest
+        self.stage = "READY — IN-MEMORY LINK"
+        self.done.set()
 
     def cancel_setup(self) -> None:
         self.cancel.set()
-
-    @staticmethod
-    def _free_local_port() -> int:
-        probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            probe.bind(("127.0.0.1", 0))
-            return int(probe.getsockname()[1])
-        finally:
-            probe.close()
-
-    def _worker(self) -> None:
-        host_job: Optional[ConnectJob] = None
-        join_job: Optional[ConnectJob] = None
-        try:
-            self.port = self._free_local_port()
-            host_job = ConnectJob()
-            self.stage = "CREATING LOCAL TLS HOST"
-            host_job.start_host(self.port, bind_host="127.0.0.1")
-
-            deadline = time.monotonic() + 10.0
-            while not host_job.result.fingerprint and not host_job.result.error:
-                if self.cancel.is_set():
-                    host_job.cancel.set()
-                    return
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("Local TLS host did not produce a pairing code")
-                time.sleep(0.01)
-
-            if host_job.result.error:
-                raise RuntimeError(host_job.result.error)
-
-            self.stage = "CONNECTING LOCAL TLS GUEST"
-            if self.cancel.is_set():
-                host_job.cancel.set()
-                return
-
-            join_job = ConnectJob()
-            join_job.start_join("127.0.0.1", self.port, host_job.result.fingerprint or "")
-
-            deadline = time.monotonic() + 15.0
-            while time.monotonic() < deadline:
-                if self.cancel.is_set():
-                    host_job.cancel.set()
-                    join_job.cancel.set()
-                    return
-                if host_job.done.is_set() and join_job.done.is_set():
-                    break
-                time.sleep(0.01)
-            else:
-                raise TimeoutError("Local TLS connection timed out")
-
-            if host_job.result.error:
-                raise RuntimeError(host_job.result.error)
-            if join_job.result.error:
-                raise RuntimeError(join_job.result.error)
-            if host_job.result.peer is None or join_job.result.peer is None:
-                raise RuntimeError("Local TLS pair was not created")
-
-            self.host_peer = host_job.result.peer
-            self.guest_peer = join_job.result.peer
-            self.stage = "READY"
-        except Exception as exc:
-            self.error = str(exc) or exc.__class__.__name__
-            self.stage = "FAILED"
-            if host_job and host_job.result.peer:
-                host_job.result.peer.close()
-            if join_job and join_job.result.peer:
-                join_job.result.peer.close()
-        finally:
-            if self.cancel.is_set():
-                if host_job:
-                    host_job.cancel.set()
-                    if host_job.result.peer:
-                        host_job.result.peer.close()
-                if join_job:
-                    join_job.cancel.set()
-                    if join_job.result.peer:
-                        join_job.result.peer.close()
-                self.stage = "CANCELLED"
-            self.done.set()
+        if self.host_peer:
+            self.host_peer.close()
+        if self.guest_peer:
+            self.guest_peer.close()
+        self.stage = "CANCELLED"
+        self.done.set()

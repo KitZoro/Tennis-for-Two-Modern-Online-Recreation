@@ -21,14 +21,12 @@ from network import SecurePeer
 
 
 class RollbackSession:
-    """v28 deterministic input-sync session.
+    """Deterministic input-sync session with a v27 start barrier.
 
-    v28 fixes:
-    - synchronized frame-0 start
-    - fixed 60-frame online buffer at 120 Hz
-    - prediction never reads a confirmed input from a future frame
-    - later speculative inputs are invalidated after a corrected prediction
-    - one network packet batch causes at most one rollback
+    Normal play sends inputs + settled-frame hashes. Full world snapshots are
+    requested only after a real hash mismatch. v27 additionally makes both
+    peers agree on the initial world and one fixed input delay *before* frame 0
+    is allowed to advance.
     """
 
     def __init__(self, local_player: int, peer: Optional[SecurePeer], is_host: bool):
@@ -43,8 +41,9 @@ class RollbackSession:
         self.predicted: dict[int, dict[int, bool]] = {1: {}, 2: {}}
         self.last_known = {1: NEUTRAL_INPUT, 2: NEUTRAL_INPUT}
         self.history: dict[int, WorldState] = {0: self.state.clone()}
-        self._pending_rollback_frame: Optional[int] = None
 
+        # v27 intentionally freezes the online buffer while reliability is
+        # being tested. Both peers receive the same value in the START packet.
         self.input_delay_frames = ONLINE_INPUT_DELAY if peer else INPUT_DELAY
 
         self.rollback_count = 0
@@ -62,6 +61,8 @@ class RollbackSession:
         self.desync_warning_until = 0.0
         self.last_state_request_frame = -1
 
+        # TLS is connected before this object exists, but simulation does not
+        # begin until HELLO -> READY -> START -> START_ACK -> GO completes.
         self.started = peer is None
         self.handshake_started_at = time.monotonic()
         self.handshake_stage = "LOCAL" if peer is None else "SENDING HELLO"
@@ -110,7 +111,6 @@ class RollbackSession:
         self.last_known = {1: NEUTRAL_INPUT, 2: NEUTRAL_INPUT}
         self.history = {frame: self.state.clone()}
         self.last_state_request_frame = -1
-        self._pending_rollback_frame = None
 
     def request_restart(self) -> None:
         if self.peer:
@@ -131,57 +131,29 @@ class RollbackSession:
                 "bits": inp.packed(),
             })
 
-    def _confirmed_input_before(self, player: int, frame: int) -> InputState:
-        best_frame = -1
-        best = NEUTRAL_INPUT
-        for candidate_frame, candidate in self.inputs[player].items():
-            if candidate_frame >= frame:
-                continue
-            if self.predicted[player].get(candidate_frame, False):
-                continue
-            if candidate_frame > best_frame:
-                best_frame = candidate_frame
-                best = candidate
-        return best
-
     def input_for(self, player: int, frame: int) -> InputState:
         known = self.inputs[player].get(frame)
         if known is not None:
             return known
-
-        predicted = self._confirmed_input_before(player, frame)
+        predicted = self.last_known[player]
         self.inputs[player][frame] = predicted
         self.predicted[player][frame] = True
         return predicted
 
-    def _invalidate_predictions_after(self, player: int, frame: int) -> None:
-        for future_frame in list(self.inputs[player].keys()):
-            if future_frame <= frame:
-                continue
-            if not self.predicted[player].get(future_frame, False):
-                continue
-            del self.inputs[player][future_frame]
-            self.predicted[player].pop(future_frame, None)
-
     def receive_input(self, player: int, frame: int, inp: InputState) -> None:
         if player not in (1, 2):
             return
-        if frame < self.current_frame - MAX_ROLLBACK or frame > self.current_frame + 720:
+        if frame < self.current_frame - MAX_ROLLBACK or frame > self.current_frame + 360:
             return
 
         old = self.inputs[player].get(frame)
         was_predicted = self.predicted[player].get(frame, False)
-
         self.inputs[player][frame] = inp
         self.predicted[player][frame] = False
+        self.last_known[player] = inp
 
-        if was_predicted and old != inp:
-            self._invalidate_predictions_after(player, frame)
-            if frame < self.current_frame:
-                if self._pending_rollback_frame is None:
-                    self._pending_rollback_frame = frame
-                else:
-                    self._pending_rollback_frame = min(self._pending_rollback_frame, frame)
+        if frame < self.current_frame and was_predicted and old != inp:
+            self.rollback(frame)
 
     def rollback(self, frame: int) -> None:
         restore = self.history.get(frame)
@@ -190,10 +162,8 @@ class RollbackSession:
 
         old_current = self.current_frame
         depth = old_current - frame
-        if depth <= 0:
-            return
-
         self.max_rollback_depth = max(self.max_rollback_depth, depth)
+
         self.state = restore.clone()
         self.current_frame = frame
         self.rollback_count += 1
@@ -237,6 +207,7 @@ class RollbackSession:
         self.ping_samples.append(value_ms)
         if len(self.ping_samples) > 12:
             self.ping_samples.pop(0)
+
         if len(self.ping_samples) >= 2:
             diffs = [
                 abs(self.ping_samples[i] - self.ping_samples[i - 1])
@@ -292,10 +263,11 @@ class RollbackSession:
         self.handshake_stage = "WAITING FOR START ACK"
 
     def _handle_handshake_message(self, msg: dict) -> bool:
+        """Return True when the message belonged to the handshake protocol."""
         if not self.peer:
             return False
-        kind = msg.get("type")
 
+        kind = msg.get("type")
         if kind == "hello":
             try:
                 protocol = int(msg["protocol"])
@@ -356,7 +328,7 @@ class RollbackSession:
                     f"Protocol mismatch: local v{PROTOCOL_VERSION}, remote v{protocol}"
                 )
                 return True
-            if not isinstance(state_dict, dict) or not (0 <= delay <= 120):
+            if not isinstance(state_dict, dict) or not (0 <= delay <= 60):
                 self._handshake_fail("Invalid START state or input delay")
                 return True
             try:
@@ -396,7 +368,14 @@ class RollbackSession:
                 self.handshake_rtt_ms = measured_rtt * 1000.0
                 self.estimated_one_way_ms = self.handshake_rtt_ms / 2.0
 
-                lead_seconds = max(START_LEAD_SECONDS, measured_rtt * 1.5 + 0.25)
+                # Schedule frame 0 in the future.  The guest receives GO about
+                # one one-way delay later, then subtracts that estimate from its
+                # own countdown.  This prevents the host from starting ~RTT/2
+                # ahead and consuming the entire rollback/input buffer.
+                lead_seconds = max(
+                    START_LEAD_SECONDS,
+                    measured_rtt * 1.5 + 0.25,
+                )
                 self.scheduled_start_at = now + lead_seconds
                 self.peer.send({
                     "type": "go",
@@ -442,8 +421,6 @@ class RollbackSession:
     def process_network(self) -> None:
         if not self.peer:
             return
-
-        self._pending_rollback_frame = None
 
         for msg in self.peer.poll_all():
             if self._handle_handshake_message(msg):
@@ -518,11 +495,6 @@ class RollbackSession:
             elif kind == "restart" and self.started:
                 self._reset_simulation()
 
-        if self._pending_rollback_frame is not None:
-            frame = self._pending_rollback_frame
-            self._pending_rollback_frame = None
-            self.rollback(frame)
-
     def _maybe_ping(self) -> None:
         if not self.peer or not self.peer.alive:
             return
@@ -572,6 +544,8 @@ class RollbackSession:
                     del mapping[key]
 
         if self.peer and self.is_host and self.current_frame % HASH_INTERVAL == 0:
+            # Host is authoritative, but only sends settled-frame hashes during
+            # normal play. A full state travels only after a real mismatch.
             hash_frame = self.current_frame - HASH_CONFIRM_LAG
             hash_state = self.history.get(hash_frame)
             if hash_state is not None:

@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import pygame
 
-import story
 import ui
 from audio import SoundManager
 from config import AUDIO_SAMPLE_RATE, WIDTH, HEIGHT
 
 
 def main() -> None:
-    print("Starting Tennis for Two v30 FULL + Story Pack")
+    print("Starting Tennis for Two v27.2 Online Reliability + Network Test")
     pygame.mixer.pre_init(AUDIO_SAMPLE_RATE, -16, 1, 512)
     pygame.init()
     ui.SOUND = SoundManager()
@@ -19,7 +18,7 @@ def main() -> None:
     except pygame.error:
         pass
 
-    pygame.display.set_caption("Tennis for Two — v30 FULL + Story Pack")
+    pygame.display.set_caption("Tennis for Two — Secure Rollback v27.2 Network Test")
     ui._open_display(False)
 
     screen = pygame.Surface((WIDTH, HEIGHT)).convert()
@@ -30,13 +29,9 @@ def main() -> None:
     )
 
     while True:
-        mode = story.main_menu(screen, fonts)
+        mode = ui.menu(screen, fonts)
         if mode is None:
             break
-
-        if mode == "story":
-            story.story_menu(screen, fonts)
-            continue
 
         if mode in ("local", "easy", "medium", "hard"):
             ui.run_match(screen, fonts, mode, None, 1)

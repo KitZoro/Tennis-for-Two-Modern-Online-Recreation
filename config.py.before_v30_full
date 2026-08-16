@@ -2,14 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Tennis for Two v28
 # Logical game canvas. ui.py scales and centers this on any monitor/window.
 WIDTH, HEIGHT = 1000, 620
 WINDOWED_SIZE = (1000, 620)
 LETTERBOX_COLOR = (3, 6, 9)
 
-# v28 deterministic simulation/render target.
-FPS = 120
+FPS = 60
 FIXED_DT = 1.0 / FPS
 
 GROUND_Y = 438
@@ -18,17 +16,15 @@ NET_HEIGHT = 62
 LEFT_EDGE = 115
 RIGHT_EDGE = WIDTH - 115
 
-PLAYER_SPEED = 340.0
-ANGLE_SPEED = 120.0
+PLAYER_SPEED = 285.0
+ANGLE_SPEED = 90.0
 GRAVITY = 540.0
 SERVE_SPEED = 385.0
 RETURN_SPEED = 445.0
 MAX_BALL_SPEED = 660.0
 BALL_RADIUS = 6
 HIT_RANGE = 42.0
-
-# Doubled from the 60 Hz build so real-time durations stay the same.
-HIT_COOLDOWN_FRAMES = 24
+HIT_COOLDOWN_FRAMES = 12
 
 SERVE_DELAY_SECONDS = 0.25
 SERVE_DELAY_FRAMES = max(1, round(FPS * SERVE_DELAY_SECONDS))
@@ -37,38 +33,37 @@ POWER_MIN = 40
 POWER_MAX = 140
 POWER_STEP = 5
 POWER_DEFAULT = 85
-POWER_CHANGE_REPEAT = 6
+POWER_CHANGE_REPEAT = 5
 
 WIN_SCORE = 7
 WIN_BY = 2
 
 # Rollback/networking.
-INPUT_DELAY = 20
-
-# v28 stability-first online setting:
-# 60 frames at 120 Hz = 0.5 seconds.
-ONLINE_INPUT_DELAY = 30
-
-# Kept for compatibility with older UI/diagnostic code.
-MIN_INPUT_DELAY = 16
-MAX_INPUT_DELAY = 60
+# v25 no longer pushes full world snapshots on a timer. The host sends hashes
+# of settled frames; a full state is sent only when the guest detects a mismatch.
+INPUT_DELAY = 10
+# v27 keeps one fixed, agreed online buffer while we stabilize netplay.
+# 16 frames = ~267 ms at 60 Hz: intentionally conservative for the
+# Alabama <-> Argentina test path without the two peers changing delay
+# independently during a rally.
+ONLINE_INPUT_DELAY = 16
+MIN_INPUT_DELAY = 8
+MAX_INPUT_DELAY = 24
 INPUT_DELAY_ADJUST_SECONDS = 2.0
-
-# Protocol 29: v28 changes deterministic timing from 60 Hz to 120 Hz.
-PROTOCOL_VERSION = 29
+PROTOCOL_VERSION = 28
+# Protocol 28 intentionally prevents v27.1 and v27.2 peers from mixing; the start handshake changed.
 HANDSHAKE_TIMEOUT = 20.0
+# Host schedules frame 0 in the near future so both peers start together.
 START_LEAD_SECONDS = 1.25
-OUTGOING_QUEUE_MAX = 4096
+OUTGOING_QUEUE_MAX = 2048
 
-# About five seconds of rollback history at 120 Hz.
-MAX_ROLLBACK = 600
-HASH_INTERVAL = 120
-HASH_CONFIRM_LAG = 200
+MAX_ROLLBACK = 300
+HASH_INTERVAL = 60
+HASH_CONFIRM_LAG = 100
 DESYNC_NOTICE_SECONDS = 2.5
 
 MAX_PACKET_SIZE = 16_384
-# 120 Hz input traffic is higher than the old 60 Hz build.
-MAX_PACKETS_PER_SECOND = 360
+MAX_PACKETS_PER_SECOND = 180
 CONNECT_TIMEOUT = 30.0
 NETWORK_STALL_WARNING = 5.0
 NETWORK_DEAD_TIMEOUT = 30.0
@@ -78,7 +73,7 @@ PAIR_DISCOVERY_PORT = 50008
 PAIR_DISCOVERY_TIMEOUT = 1.25
 TAILSCALE_REFRESH_SECONDS = 2.0
 
-# Visual smoothing is presentation only.
+# Visual smoothing is presentation only; collisions use the deterministic state.
 RENDER_SMOOTHING = 0.34
 RENDER_SNAP_DISTANCE = 150.0
 RENDER_BALL_SNAP_DISTANCE = 210.0

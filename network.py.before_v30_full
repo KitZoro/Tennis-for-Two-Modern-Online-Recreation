@@ -524,13 +524,6 @@ class SecurePeer:
         except OSError:
             pass
 
-        # v29/v30: larger OS socket buffers for the 120 Hz transport.
-        try:
-            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 262144)
-            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 262144)
-        except OSError:
-            pass
-
         self.alive = True
         self.inbox: "queue.Queue[dict]" = queue.Queue()
         self.outbox: "queue.Queue[dict]" = queue.Queue(maxsize=OUTGOING_QUEUE_MAX)
@@ -662,72 +655,48 @@ class SecurePeer:
             if self.alive:
                 self._terminate(str(exc) or exc.__class__.__name__)
 
-    def _send_bytes(self, packet: bytes) -> None:
-        """Send an entire byte string without resending an already-written prefix."""
-        view = memoryview(packet)
-        offset = 0
-        stall_started = None
-
-        while offset < len(view) and self.alive:
-            try:
-                sent = self.sock.send(view[offset:])
-                if sent <= 0:
-                    raise ConnectionError("TLS socket stopped accepting data")
-                offset += sent
-                if stall_started is not None:
-                    self.last_send_stall_ms = (time.monotonic() - stall_started) * 1000.0
-                else:
-                    self.last_send_stall_ms = 0.0
-            except (
-                socket.timeout,
-                BlockingIOError,
-                ssl.SSLWantReadError,
-                ssl.SSLWantWriteError,
-            ):
-                if stall_started is None:
-                    stall_started = time.monotonic()
-                if time.monotonic() - stall_started >= NETWORK_DEAD_TIMEOUT:
-                    raise ConnectionError(
-                        f"Outgoing network stalled for {int(NETWORK_DEAD_TIMEOUT)} seconds"
-                    )
-                time.sleep(0.002)
-
     def _writer(self) -> None:
-        """Drain the outbox in small batches and send with partial-write safety."""
         try:
             while self.alive:
                 try:
-                    first = self.outbox.get(timeout=0.25)
+                    payload = self.outbox.get(timeout=0.25)
                 except queue.Empty:
                     continue
 
-                batch = [first]
-                while len(batch) < 16:
+                envelope = {"seq": self.send_seq, "payload": payload}
+                self.send_seq += 1
+                raw = json.dumps(envelope, separators=(",", ":")).encode("utf-8")
+                if len(raw) > MAX_PACKET_SIZE:
+                    self.outbox.task_done()
+                    continue
+                packet = struct.pack("!I", len(raw)) + raw
+
+                stall_started: Optional[float] = None
+                while self.alive:
                     try:
-                        batch.append(self.outbox.get_nowait())
-                    except queue.Empty:
+                        self.sock.sendall(packet)
+                        self.packets_out += 1
+                        if stall_started is not None:
+                            self.last_send_stall_ms = (time.monotonic() - stall_started) * 1000.0
+                        else:
+                            self.last_send_stall_ms = 0.0
                         break
+                    except (
+                        socket.timeout,
+                        BlockingIOError,
+                        ssl.SSLWantReadError,
+                        ssl.SSLWantWriteError,
+                    ):
+                        if stall_started is None:
+                            stall_started = time.monotonic()
+                        if time.monotonic() - stall_started >= NETWORK_DEAD_TIMEOUT:
+                            raise ConnectionError(
+                                f"Outgoing network stalled for {int(NETWORK_DEAD_TIMEOUT)} seconds"
+                            )
+                        time.sleep(0.01)
+                        continue
 
-                framed = []
-                valid_count = 0
-
-                try:
-                    for payload in batch:
-                        envelope = {"seq": self.send_seq, "payload": payload}
-                        self.send_seq += 1
-                        raw = json.dumps(envelope, separators=(",", ":")).encode("utf-8")
-                        if len(raw) > MAX_PACKET_SIZE:
-                            continue
-                        framed.append(struct.pack("!I", len(raw)) + raw)
-                        valid_count += 1
-
-                    if framed:
-                        self._send_bytes(b"".join(framed))
-                        self.packets_out += valid_count
-                finally:
-                    for _ in batch:
-                        self.outbox.task_done()
-
+                self.outbox.task_done()
         except (OSError, ssl.SSLError, ConnectionError) as exc:
             if self.alive:
                 self._terminate(str(exc) or exc.__class__.__name__)
