@@ -357,6 +357,7 @@ def main_menu(screen, fonts) -> Optional[str]:
         ("5", "COMPUTER — HARD", "hard"),
         ("6", "ONLINE LOBBY — TAILSCALE", "online"),
         ("7", "NETWORK TEST — ONE PC", "nettest"),
+        ("8", "AUDIO SETTINGS", "audio"),
     ]
     clock = pygame.time.Clock()
 
@@ -372,7 +373,10 @@ def main_menu(screen, fonts) -> Optional[str]:
                     continue
                 for key, _, mode in options:
                     if event.unicode == key:
-                        return mode
+                        if mode == "audio": # added
+                            audio_menu(screen, fonts) # added
+                        else: # added
+                            return mode
 
         screen.fill(BG)
         ui.draw_grid(screen)
@@ -391,4 +395,115 @@ def main_menu(screen, fonts) -> Optional[str]:
             ui.draw_text(screen, small, f"MUSIC {music_state}: {ui.SOUND.music_name}    SFX {sfx_state}", (WIDTH // 2, 482), MUTED, center=True)
 
         ui.draw_text(screen, small, "F11 FULLSCREEN   M MUSIC   N SFX   F5 RELOAD MUSIC   ESC QUITS", (WIDTH // 2, 530), MUTED, center=True)
+        ui.present(screen)
+
+# added
+def audio_menu(screen, fonts) -> None:
+    large, medium, small = fonts
+    clock = pygame.time.Clock()
+
+    selected = 0
+    options = ["SFX", "MUSIC"]
+
+    while True:
+        clock.tick(FPS)
+
+        for event in ui.game_events():
+            if event.type == pygame.QUIT:
+                return
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    return
+
+                if event.key == pygame.K_UP:
+                    selected = (selected - 1) % len(options)
+
+                elif event.key == pygame.K_DOWN:
+                    selected = (selected + 1) % len(options)
+
+                elif event.key == pygame.K_LEFT:
+                    if ui.SOUND is not None:
+                        if selected == 0:
+                            ui.SOUND.set_sfx_volume(ui.SOUND.sfx_volume - 0.05)
+                        else:
+                            ui.SOUND.set_music_volume(ui.SOUND.music_volume - 0.05)
+
+                elif event.key == pygame.K_RIGHT:
+                    if ui.SOUND is not None:
+                        if selected == 0:
+                            ui.SOUND.set_sfx_volume(ui.SOUND.sfx_volume + 0.05)
+                        else:
+                            ui.SOUND.set_music_volume(ui.SOUND.music_volume + 0.05)
+
+        screen.fill(BG)
+        ui.draw_grid(screen)
+
+        ui.draw_text(
+            screen,
+            large,
+            "AUDIO SETTINGS",
+            (WIDTH // 2, 100),
+            GREEN,
+            center=True,
+        )
+
+        if ui.SOUND is not None:
+            values = [
+                ui.SOUND.sfx_volume,
+                ui.SOUND.music_volume,
+            ]
+
+            y = 220
+
+            for i, label in enumerate(options):
+                value = values[i]
+                percent = round(value * 100)
+
+                color = GREEN if i == selected else WHITE
+
+                ui.draw_text(
+                    screen,
+                    medium,
+                    f"{label}: {percent}%",
+                    (WIDTH // 2, y),
+                    color,
+                    center=True,
+                )
+
+                bar_x = WIDTH // 2 - 200
+                bar_y = y + 35
+                bar_width = 400
+                bar_height = 18
+
+                pygame.draw.rect(
+                    screen,
+                    DARK_PANEL,
+                    (bar_x, bar_y, bar_width, bar_height),
+                    border_radius=8,
+                )
+
+                pygame.draw.rect(
+                    screen,
+                    GREEN,
+                    (
+                        bar_x,
+                        bar_y,
+                        int(bar_width * value),
+                        bar_height,
+                    ),
+                    border_radius=8,
+                )
+
+                y += 120
+
+        ui.draw_text(
+            screen,
+            small,
+            "UP/DOWN SELECT   LEFT/RIGHT CHANGE   ESC BACK",
+            (WIDTH // 2, 520),
+            MUTED,
+            center=True,
+        )
+
         ui.present(screen)

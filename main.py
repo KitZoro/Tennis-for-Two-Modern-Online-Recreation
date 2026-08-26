@@ -7,7 +7,6 @@ import ui
 from audio import SoundManager
 from config import AUDIO_SAMPLE_RATE, WIDTH, HEIGHT
 
-
 def main() -> None:
     print("Starting Tennis for Two v30 FULL + Story Pack")
     pygame.mixer.pre_init(AUDIO_SAMPLE_RATE, -16, 1, 512)

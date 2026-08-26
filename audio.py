@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import array
+import json # added
 import math
 from pathlib import Path
 from typing import Optional
 
 import pygame
 
-from config import AUDIO_SAMPLE_RATE, AUDIO_VOLUME, MUSIC_VOLUME
+from config import AUDIO_SAMPLE_RATE, AUDIO_VOLUME, MUSIC_VOLUME, CONFIG_DIR # added CONFIG_DIR here
 from game import WorldState
 
+AUDIO_SAVE = CONFIG_DIR / "audio_settings.json" # added
 
 class SoundManager:
     """Sound effects plus either custom streamed music or a synthesized fallback.
@@ -29,6 +31,12 @@ class SoundManager:
         self.using_streamed_music = False
         self._seen_events: set[tuple] = set()
         self._seen_order: list[tuple] = []
+
+        # My addition, holds the % of the volume the user wants.
+        self.sfx_volume = 1.0 # sound
+        self.music_volume = 1.0 # music
+        self._load_volume_settings()
+
         try:
             if pygame.mixer.get_init() is None:
                 pygame.mixer.init(
@@ -197,7 +205,9 @@ class SoundManager:
         if self.music_path is not None:
             try:
                 pygame.mixer.music.load(str(self.music_path))
-                pygame.mixer.music.set_volume(MUSIC_VOLUME)
+
+                pygame.mixer.music.set_volume(MUSIC_VOLUME * self.music_volume) # edited
+
                 pygame.mixer.music.play(-1)
                 self.using_streamed_music = True
                 return
@@ -207,6 +217,8 @@ class SoundManager:
 
         if self.music_channel is not None:
             self.music_channel.play(self.sounds["fallback_music"], loops=-1)
+
+            self.music_channel.set_volume(MUSIC_VOLUME * self.music_volume) # added
 
     @property
     def music_name(self) -> str:
@@ -247,7 +259,30 @@ class SoundManager:
                 self._seen_events.discard(old)
         sound = self.sounds.get(name)
         if sound is not None:
+
+            # my addition, applies the % of volume desired by the user
+            sound.set_volume(self.sfx_volume)
+
             sound.play()
+
+
+    # my addition, limits the volume that the user can input for sound, irrelevant for now but chatgpt insisted.
+    def set_sfx_volume(self, volume: float) -> None:
+        self.sfx_volume = max(0.0, min(1.0, volume))
+        self._save_volume_settings()
+
+    # my addition, limits the volume that the user can input for music and changes volume of music.
+    def set_music_volume(self, volume: float) -> None:
+        self.music_volume = max(0.0, min(1.0, volume))
+
+        if not self.enabled or pygame.mixer.get_init() is None:
+            return
+
+        if self.using_streamed_music:
+            pygame.mixer.music.set_volume(MUSIC_VOLUME * self.music_volume)
+        elif self.music_channel is not None:
+            self.music_channel.set_volume(MUSIC_VOLUME * self.music_volume)
+        self._save_volume_settings()
 
     def toggle_music(self) -> bool:
         self.music_muted = not self.music_muted
@@ -300,3 +335,40 @@ class SoundManager:
         if bounced:
             self.play("bounce", ("bounce", frame, after.ball.bounce_side, after.ball.bounces_on_side))
 
+
+    # added
+    def _save_volume_settings(self) -> None:
+        try:
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+            AUDIO_SAVE.write_text(
+                json.dumps(
+                    {
+                        "sfx_volume": self.sfx_volume,
+                        "music_volume": self.music_volume,
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    # added
+    def _load_volume_settings(self) -> None:
+        try:
+            data = json.loads(AUDIO_SAVE.read_text(encoding="utf-8"))
+
+            self.sfx_volume = max(
+                0.0,
+                min(1.0, float(data.get("sfx_volume", 1.0)))
+            )
+
+            self.music_volume = max(
+                0.0,
+                min(1.0, float(data.get("music_volume", 1.0)))
+            )
+
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            self.sfx_volume = 1.0
+            self.music_volume = 1.0
