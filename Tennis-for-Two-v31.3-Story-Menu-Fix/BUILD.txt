@@ -1,0 +1,4 @@
+Tennis for Two v31.3 - Story Menu Fix
+Base: v31 Fast Input Network
+Story art: pure Pygame vector drawing
+No Blender/Panda3D/FBX runtime required.
