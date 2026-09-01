@@ -1,0 +1,39 @@
+{
+  "config": [],
+  "cpu": [
+    "config",
+    "game"
+  ],
+  "rollback": [
+    "config",
+    "diagnostics",
+    "game",
+    "network"
+  ],
+  "game": [
+    "config"
+  ],
+  "audio": [
+    "config",
+    "game"
+  ],
+  "ui": [
+    "audio",
+    "config",
+    "cpu",
+    "game",
+    "network",
+    "rollback"
+  ],
+  "diagnostics": [
+    "config"
+  ],
+  "network": [
+    "config"
+  ],
+  "main": [
+    "audio",
+    "config",
+    "ui"
+  ]
+}
