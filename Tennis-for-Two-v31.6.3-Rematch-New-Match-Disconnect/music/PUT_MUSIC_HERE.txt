@@ -1,0 +1,20 @@
+CUSTOM MUSIC
+
+Drop one of these files here:
+    gameplay.ogg
+    gameplay.mp3
+    gameplay.wav
+
+Those filenames are preferred. If none exists, the game uses the first
+.ogg/.mp3/.wav file in this folder alphabetically.
+
+Controls:
+    M   mute/unmute music only
+    N   mute/unmute sound effects only
+    F5  reload this folder while the game is running
+
+If no compatible file is found, Tennis for Two uses its built-in synthesized
+music instead.
+
+For music you redistribute with the game, use music you created or have
+permission/license to distribute.
