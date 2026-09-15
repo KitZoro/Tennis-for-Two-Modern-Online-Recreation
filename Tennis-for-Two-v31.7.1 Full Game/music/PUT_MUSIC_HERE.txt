@@ -1,0 +1,19 @@
+CUSTOM MUSIC
+
+Drop as many .ogg, .mp3, or .wav files here as you want.
+
+Choose 9 - CHOOSE BGM from the main menu, use Up/Down to highlight a song,
+and press Enter to play it. The choice is saved for the next launch. Built-in
+Synth is always available, even when this folder is empty.
+
+Controls:
+    M   mute/unmute music only
+    N   mute/unmute sound effects only
+    F5  reload this folder while the game is running
+    R   rescan this folder from the BGM selection screen
+
+If no compatible file is found, Tennis for Two uses its built-in synthesized
+music instead.
+
+For music you redistribute with the game, use music you created or have
+permission/license to distribute.

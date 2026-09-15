@@ -1,0 +1,105 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+# Tennis for Two v28
+# Logical game canvas. ui.py scales and centers this on any monitor/window.
+WIDTH, HEIGHT = 1000, 620
+WINDOWED_SIZE = (1000, 620)
+LETTERBOX_COLOR = (3, 6, 9)
+
+# v28 deterministic simulation/render target.
+FPS = 120
+FIXED_DT = 1.0 / FPS
+
+GROUND_Y = 438
+NET_X = WIDTH // 2
+NET_HEIGHT = 62
+LEFT_EDGE = 115
+RIGHT_EDGE = WIDTH - 115
+
+PLAYER_SPEED = 340.0
+ANGLE_SPEED = 120.0
+GRAVITY = 540.0
+SERVE_SPEED = 385.0
+RETURN_SPEED = 445.0
+MAX_BALL_SPEED = 660.0
+BALL_RADIUS = 6
+HIT_RANGE = 42.0
+
+# Doubled from the 60 Hz build so real-time durations stay the same.
+HIT_COOLDOWN_FRAMES = 24
+
+SERVE_DELAY_SECONDS = 0.25
+SERVE_DELAY_FRAMES = max(1, round(FPS * SERVE_DELAY_SECONDS))
+
+POWER_MIN = 40
+POWER_MAX = 140
+POWER_STEP = 5
+POWER_DEFAULT = 85
+POWER_CHANGE_REPEAT = 6
+
+WIN_SCORE = 7
+WIN_BY = 2
+
+# Rollback/networking.
+INPUT_DELAY = 20
+
+# v31.5 rollback-first online setting:
+# 8 frames at 120 Hz = 66.7 ms. Late remote input is corrected by rollback.
+ONLINE_INPUT_DELAY = 8
+# Kept for compatibility with older UI/diagnostic code.
+MIN_INPUT_DELAY = 4
+MAX_INPUT_DELAY = 16
+INPUT_DELAY_ADJUST_SECONDS = 2.0
+
+# Protocol 33: v31.6.1 restores coordinated post-match disconnect/menu return.
+PROTOCOL_VERSION = 34
+HANDSHAKE_TIMEOUT = 20.0
+START_LEAD_SECONDS = 1.25
+OUTGOING_QUEUE_MAX = 512
+
+# About five seconds of rollback history at 120 Hz.
+MAX_ROLLBACK = 600
+HASH_INTERVAL = 120
+HASH_CONFIRM_LAG = 200
+DESYNC_NOTICE_SECONDS = 2.5
+
+MAX_PACKET_SIZE = 16_384
+# v31 transport: inputs are sent immediately on change, with a low-rate heartbeat.
+# Simulation/input sampling remains 120 Hz; only redundant network messages are removed.
+NETWORK_INPUT_HEARTBEAT_FRAMES = 12
+MAX_PACKETS_PER_SECOND = 240
+CONNECT_TIMEOUT = 30.0
+NETWORK_STALL_WARNING = 5.0
+NETWORK_DEAD_TIMEOUT = 30.0
+
+DEFAULT_ONLINE_PORT = 50007
+PAIR_DISCOVERY_PORT = 50008
+PAIR_DISCOVERY_TIMEOUT = 1.25
+TAILSCALE_REFRESH_SECONDS = 2.0
+
+# Visual smoothing is presentation only.
+RENDER_SMOOTHING = 0.34
+RENDER_SNAP_DISTANCE = 150.0
+RENDER_BALL_SNAP_DISTANCE = 210.0
+
+# Audio.
+AUDIO_SAMPLE_RATE = 44_100
+AUDIO_VOLUME = 0.45
+# 100% is a comfortable half-scale master; 200% reaches full mixer gain.
+MUSIC_VOLUME = 0.50
+
+# Theme.
+BG = (15, 21, 28)
+GRID = (61, 111, 76)
+GRID_BRIGHT = (88, 142, 99)
+GREEN = (79, 255, 117)
+WHITE = (232, 255, 237)
+MUTED = (134, 176, 144)
+DARK_PANEL = (24, 35, 43)
+ERROR = (255, 120, 120)
+
+CONFIG_DIR = Path.home() / ".config" / "tennis_for_two"
+TRUST_FILE = CONFIG_DIR / "trusted_hosts.json"
+LOG_DIR = CONFIG_DIR / "logs"
