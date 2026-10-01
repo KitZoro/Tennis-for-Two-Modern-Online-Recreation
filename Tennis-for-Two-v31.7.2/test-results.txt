@@ -1,0 +1,24 @@
+<frozen importlib._bootstrap>:488: RuntimeWarning: Your system is avx2 capable but pygame was not built with support for it. The performance of some of your blits could be adversely affected. Consider enabling compile time detection with environment variables like PYGAME_DETECT_AVX2=1 if you are compiling without cross compilation.
+test_exit_during_countdown_reaches_other_peer (test_match_lifecycle.NetworkLifecycleTests.test_exit_during_countdown_reaches_other_peer) ... ok
+test_held_input_rematches_sync_for_either_or_both_players (test_match_lifecycle.NetworkLifecycleTests.test_held_input_rematches_sync_for_either_or_both_players) ... ok
+test_previous_match_messages_cannot_mutate_rematch (test_match_lifecycle.NetworkLifecycleTests.test_previous_match_messages_cannot_mutate_rematch) ... ok
+test_protocol_mismatch_is_rejected (test_match_lifecycle.NetworkLifecycleTests.test_protocol_mismatch_is_rejected) ... ok
+test_default_serve_is_legal_from_both_sides (test_match_lifecycle.ScreenAndStoryTests.test_default_serve_is_legal_from_both_sides) ... ok
+test_n_still_mutes_during_active_match (test_match_lifecycle.ScreenAndStoryTests.test_n_still_mutes_during_active_match) ... ok
+test_new_match_key_wins_over_audio_shortcut (test_match_lifecycle.ScreenAndStoryTests.test_new_match_key_wins_over_audio_shortcut) ... ok
+test_online_victory_screen_renders (test_match_lifecycle.ScreenAndStoryTests.test_online_victory_screen_renders) ... ok
+test_story_win_saved_before_victory_dialogue_exit (test_match_lifecycle.ScreenAndStoryTests.test_story_win_saved_before_victory_dialogue_exit) ... ok
+test_each_story_chapter_keeps_time_at_15_fps (test_playtest_fixes.PlaytestFixTests.test_each_story_chapter_keeps_time_at_15_fps) ... ok
+test_easy_miss_is_not_rerolled_each_contact_tick (test_playtest_fixes.PlaytestFixTests.test_easy_miss_is_not_rerolled_each_contact_tick) ... ok
+test_ground_covers_legal_edges (test_playtest_fixes.PlaytestFixTests.test_ground_covers_legal_edges) ... ok
+test_low_render_rates_preserve_simulation_speed (test_playtest_fixes.PlaytestFixTests.test_low_render_rates_preserve_simulation_speed) ... ok
+test_planned_returns_land_legally_with_real_physics (test_playtest_fixes.PlaytestFixTests.test_planned_returns_land_legally_with_real_physics) ... ok
+test_serves_use_real_attached_ball_position (test_playtest_fixes.PlaytestFixTests.test_serves_use_real_attached_ball_position) ... ok
+test_shot_estimator_matches_fixed_step_integration (test_playtest_fixes.PlaytestFixTests.test_shot_estimator_matches_fixed_step_integration) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 1.007s
+
+OK
+pygame 2.5.2 (SDL 2.30.0, Python 3.12.3)
+Hello from the pygame community. https://www.pygame.org/contribute.html

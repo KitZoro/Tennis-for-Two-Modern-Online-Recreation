@@ -1,0 +1,2 @@
+Tennis for Two v31.7.2 — match lifecycle and story-save fixes
+Network protocol 35; both players must use this build.
